@@ -1,97 +1,83 @@
-# FR-11 cross-origin change — verification record
+# FR-11 cross-origin change — what is checked, and how to check it
+
+This document is the durable half of FR-11's verification: what the checks are,
+where they live and how to run them. It deliberately records **no run results**.
+The outcome of any particular run — which checks passed, which were not run,
+the captured output — belongs in that run's pull request description, because a
+result committed here is stale the moment someone runs the stack and then
+misinforms every later reader.
+
+## The change
+
+Four one-line edits: `extensions.cors.allowedOrigins` goes from `- '*'` to
+`- 'http://localhost:3000'` in `ntrada.yml`, `ntrada.docker.yml`,
+`ntrada-async.yml` and `ntrada-async.docker.yml`, keeping `allowCredentials:
+true`. A wildcard origin and credentialled requests are mutually exclusive in
+the Fetch Standard, so the wildcard had to go for the browser client to work at
+all. `http://localhost:3000` is the local `Pacco.Web` development origin.
+
+## The two obligations, and what discharges each
 
 SPECIFICATION.md §19 counts FR-11's verification obligation as **"1 four-file
-byte-identity diff, plus 2 cross-origin browser checks"**. That is two halves,
-and they are discharged by two different things:
+byte-identity diff, plus 2 cross-origin browser checks"** — two halves,
+discharged by different things.
 
-| Obligation | Acceptance criterion | Discharged by | Status |
+| Obligation | Criterion | Discharged by | Needs a running stack |
 | --- | --- | --- | --- |
-| four-file byte-identity diff | AC-15 (static) | `./scripts/verify-cors-config.sh`, run from `./scripts/test.sh` on every CI build | **PASSED** |
-| 2 cross-origin browser checks | AC-16 (runtime) | `./scripts/verify-cors-runtime.sh` here, and `Pacco.Web/scripts/cors-browser-check.mjs` in the client repository | **NOT RUN** |
+| four-file byte-identity diff | AC-15 (static) | `./scripts/verify-cors-config.sh` | no |
+| allowed-origin cross-origin check | AC-16 (runtime) | `./scripts/verify-cors-runtime.sh`, and `npm run verify:cors-browser` in `Pacco.Web` | **yes** |
+| disallowed-origin cross-origin check | AC-16 (runtime) | the same two commands | **yes** |
 
-> **AC-16: not run — no Docker Compose stack available.**
->
-> Both runtime checks need a gateway answering on `http://localhost:5000`, which
-> means the Docker Compose stack. No such stack runs in this environment, so the
-> two cross-origin browser checks did not execute. Per
-> `LOW_LEVEL_SPEC-13652-wave-1.md` §L.6.2, an affected §L.6.A row in this
-> situation is reported as **"not run"** and **never as passed**. AC-16 is
-> therefore open, and this section is the explicit disclosure of that.
+⚠️ The allowed-origin check alone does **not** discharge AC-16. A wildcard
+configuration passes it, so the disallowed-origin half — and the direct
+comparison of the two responses' `Access-Control-Allow-Origin` headers — is what
+makes the check evidence of anything.
 
-## What changed, and why a guard was added here
+⚠️ Where the stack is unavailable the runtime rows are reported as **not run**,
+never as passed (`LOW_LEVEL_SPEC-13652-wave-1.md` §L.6.2).
+`verify-cors-runtime.sh` exits **2** for "not run", kept distinct from **1** for
+"failed", so no CI wrapper can mistake an absent stack for a pass.
 
-The change itself is four one-line edits: `extensions.cors.allowedOrigins`
-goes from `- '*'` to `- 'http://localhost:3000'` in `ntrada.yml`,
-`ntrada.docker.yml`, `ntrada-async.yml` and `ntrada-async.docker.yml`, keeping
-`allowCredentials: true`. A wildcard origin and credentialled requests are
-mutually exclusive in the CORS specification, so the wildcard had to go for the
-browser client to work at all.
+## Running the checks
 
-The regression guard lives **in this repository**. An earlier revision asserted
-byte identity only from the client repository's Jest suite, which meant a
-regression in an `ntrada*.yml` could land here without anything in this
-repository's own build noticing. `scripts/verify-cors-config.sh` needs no
-toolchain — plain `bash` and `awk` — so it runs before `dotnet test` in
-`scripts/test.sh` and fails the build even though this repository has no test
-project. That satisfies ADR-004 §2 obligation 1: the artefact that can break the
-contract carries the check for it.
-
-`.travis.yml` now also builds `feature/*` branches, so the guard actually runs on
-the branch where `ntrada*.yml` is edited rather than only after a merge.
-`scripts/dockerize.sh` exits early when the branch carries no tag, so widening
-the branch filter produces no stray images.
-
-## Commands run, and their output
-
-### AC-15 — static byte-identity and exact-origin guard: PASSED
+### AC-15 — static, no stack required
 
 ```
-$ ./scripts/verify-cors-config.sh
-Edge cross-origin configuration guard (AC-15 / FR-11)
-
-  PASS  cors block is byte-identical across all four ntrada*.yml files
-  PASS  ntrada.yml allows exactly one origin
-  PASS  ntrada.yml names a concrete origin with scheme, host and port (http://localhost:3000)
-  PASS  ntrada.yml retains no wildcard origin
-  PASS  ntrada.yml leaves allowCredentials true
-  PASS  ntrada.yml leaves allowedMethods untouched
-  ... (37 assertions in total, 1 cross-file + 9 per file x 4 files)
-
-RESULT: PASS — allowed origin is 'http://localhost:3000' in all four files.
-
-NOTE: this guard is the STATIC half of FR-11 (AC-15) only. The runtime half
-      (AC-16) is ./scripts/verify-cors-runtime.sh and needs a running
-      gateway; a passing static guard is NOT evidence that the browser path
-      works.
-
-$ echo $?
-0
+./scripts/verify-cors-config.sh
 ```
 
-The guard was also confirmed to fail: temporarily restoring `- '*'` in one file
-produced 5 `FAIL` lines and exit status 1, so the `PASS` above is not vacuous.
+Asserts that the `extensions.cors` block is byte-identical across the four
+files, that `allowedOrigins` holds exactly one entry, that the entry is a
+concrete `scheme://host:port` origin, that no `'*'` survives, that
+`allowCredentials`, `allowedMethods`, `allowedHeaders` and `exposedHeaders`
+still hold their expected values, and that no logout or revoke route has
+appeared. Exit 0 = pass, 1 = fail.
 
-### AC-16 — runtime cross-origin checks: NOT RUN
+The expected values in check 5 are literals, not a diff against the base ref: a
+deliberate future change to any of those keys is expected to update the literal
+in the guard in the same commit.
+
+### The guards' own tests
 
 ```
-$ ./scripts/verify-cors-runtime.sh
-Edge cross-origin runtime check (AC-16 / FR-11)
-  gateway            : http://localhost:5000
-  allowed origin     : http://localhost:3000
-  disallowed origin  : http://localhost:3999
-
-RESULT: NOT RUN — the gateway did not answer at http://localhost:5000. Start the Docker Compose stack (docs: §L.12.3) and re-run.
-        AC-16 (FR-11) is NOT discharged by this run. It must be reported
-        as 'not run', never as passed (§L.6.2).
-
-$ echo $?
-2
+./scripts/tests/cors-guard.test.sh
 ```
 
-Exit status **2 means NOT RUN** and is deliberately distinct from 1 (failed), so
-no CI wrapper can mistake an absent stack for a pass.
+A check that cannot fail on a broken configuration is worse than none, so the
+guards are themselves tested. The suite drives the header parsing over recorded
+responses, runs the static guard over mutated copies of the four files — a
+restored wildcard, a second origin, single-file drift, a flipped
+`allowCredentials`, an injected sign-out route — and runs the runtime check
+against a local mock edge presenting the compliant header shape and four
+non-compliant ones. It also measures and enforces line coverage of the three
+shell modules; see `scripts/tests/lib/bashcov.sh` for why coverage is measured
+that way in a repository with no test project.
 
-## How to discharge AC-16 when a stack is available
+🚫 A green run of this suite is **not** AC-16. The mock edge stands in for the
+gateway so the instrument can be proven; AC-16 is a statement about the real
+gateway.
+
+### AC-16 — runtime, needs the stack
 
 1. Start the backend stack so the gateway listens on `http://localhost:5000`.
 2. Header-level check, from this repository:
@@ -103,9 +89,11 @@ no CI wrapper can mistake an absent stack for a pass.
 
    It sends a preflight `OPTIONS` and a `POST /identity/sign-in` from both the
    allowed and a disallowed origin and asserts that
-   `Access-Control-Allow-Origin` echoes the allowed origin exactly, is
-   absent or non-matching for the disallowed one, and that the two responses
-   differ — which is what a surviving wildcard would fail.
+   `Access-Control-Allow-Origin` echoes the allowed origin exactly, that
+   `Access-Control-Allow-Credentials: true` accompanies it, that no response
+   carries a `*`, that the disallowed origin's responses are unreadable to the
+   page, and that the two origins receive different headers on both the
+   preflight and the POST.
 
 3. Browser-level check, from the client repository, which is the one §19
    literally asks for:
@@ -123,6 +111,22 @@ Neither script sends a real credential: the probe body is
 repository, and the browser takes its CORS decision before the response body
 matters — a `400` from the identity service is a perfectly good "the browser let
 me read the response" result.
+
+## Where the guard runs in CI
+
+`.travis.yml` runs `./scripts/tests/cors-guard.test.sh` and
+`./scripts/verify-cors-config.sh` as their own steps, ahead of
+`./scripts/build.sh`, so the FR-11 regression check does not depend on the
+pinned .NET toolchain. `./scripts/test.sh` runs both again and then invokes
+`dotnet test` **only** where a test project exists — this repository declares
+none, and an unconditional `dotnet test` would leave a permanently failing step
+in which the guards' own result could not be read.
+
+⚠️ Travis builds `master` and `develop` only. On a feature branch the guards are
+run by hand with the commands above. Extending `branches.only` to feature
+branches is a CI-policy change outside the change surface
+`LOW_LEVEL_SPEC-13652-wave-1.md` §L.5 step 7 authorises for FR-11, so it is left
+for explicit approval as a separate change rather than carried here.
 
 ## Out of scope, stated so it is not mistaken for an omission
 

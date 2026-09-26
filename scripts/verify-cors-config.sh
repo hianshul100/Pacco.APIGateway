@@ -10,7 +10,11 @@
 #   3. that entry is a concrete origin carrying scheme, host and port;
 #   4. no `'*'` wildcard survives in `allowedOrigins`;
 #   5. `allowCredentials`, `allowedMethods`, `allowedHeaders` and
-#      `exposedHeaders` are unchanged from the base ref;
+#      `exposedHeaders` still hold their EXPECTED values — the values they
+#      carry on the base ref of this change, restated here as literals. The
+#      guard does not diff against the ref, so a deliberate future edit to any
+#      of those keys is expected to update the literals below in the same
+#      commit; the failure message names the expected value for that reason;
 #   6. no logout, sign-out or revoke route is introduced, since logout is a
 #      client-side session discard only and the edge's JWT validation and
 #      revocation behaviour are untouched.
@@ -24,12 +28,18 @@
 # architectural artifact, and per ADR-021 §5 rule 4 the edge names its browser
 # caller exactly and all four configuration files stay identical.
 #
+# The guard is covered by `scripts/tests/cors-guard.test.sh`, which runs it over
+# mutated copies of the configuration — a restored wildcard, a second origin, a
+# flipped `allowCredentials`, an injected logout route — and asserts each one is
+# caught. `PACCO_NTRADA_DIR` exists so that suite can point the guard at a
+# throw-away copy; in normal use it is unset and the guard reads this checkout.
+#
 # Exit codes: 0 = all checks passed, 1 = at least one check failed.
 
 set -u
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CONFIG_DIR="$ROOT/src/Pacco.APIGateway"
+CONFIG_DIR="${PACCO_NTRADA_DIR:-$ROOT/src/Pacco.APIGateway}"
 FILES=(ntrada.yml ntrada.docker.yml ntrada-async.yml ntrada-async.docker.yml)
 
 failures=0
@@ -118,31 +128,34 @@ for name in "${FILES[@]}"; do
     pass "$name retains no wildcard origin"
   fi
 
-  # 5. Sibling CORS keys unchanged from the base ref.
+  # 5. Sibling CORS keys still hold their expected values. These are literals,
+  #    not a diff against the base ref: a deliberate change to any of them is
+  #    expected to update the literal here in the same commit, so the failure
+  #    message names what was expected rather than claiming the key "changed".
   if [[ "$block" == *"allowCredentials: true"* ]]; then
     pass "$name leaves allowCredentials true"
   else
-    fail "$name changed allowCredentials"
+    fail "$name allowCredentials differs from the expected value 'true'"
   fi
 
   if [[ "$block" == *$'allowedMethods:\n      - post\n      - put\n      - delete'* ]]; then
-    pass "$name leaves allowedMethods untouched"
+    pass "$name leaves allowedMethods at its expected value"
   else
-    fail "$name changed allowedMethods"
+    fail "$name allowedMethods differs from the expected value (post, put, delete)"
   fi
 
   # `allowedHeaders: '*'` is a DIFFERENT key from `allowedOrigins` and its
   # wildcard is expected to survive; narrowing it is not this change's business.
   if [[ "$block" == *$'allowedHeaders:\n      - \'*\''* ]]; then
-    pass "$name leaves allowedHeaders untouched"
+    pass "$name leaves allowedHeaders at its expected value"
   else
-    fail "$name changed allowedHeaders"
+    fail "$name allowedHeaders differs from the expected value ('*')"
   fi
 
   if [[ "$block" == *$'exposedHeaders:\n      - Request-ID\n      - Resource-ID\n      - Trace-ID\n      - Total-Count'* ]]; then
-    pass "$name leaves exposedHeaders untouched"
+    pass "$name leaves exposedHeaders at its expected value"
   else
-    fail "$name changed exposedHeaders"
+    fail "$name exposedHeaders differs from the expected value (Request-ID, Resource-ID, Trace-ID, Total-Count)"
   fi
 
   # 6. No logout / revoke route, and no change to JWT validation.
@@ -157,7 +170,7 @@ for name in "${FILES[@]}"; do
   if [[ "$content" == *$'jwt:\n    issuerSigningKey'* ]]; then
     pass "$name leaves the jwt extension in place and unreordered"
   else
-    fail "$name altered the jwt extension"
+    fail "$name jwt extension differs from the expected shape (jwt: followed by issuerSigningKey)"
   fi
 done
 

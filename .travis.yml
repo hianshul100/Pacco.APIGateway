@@ -7,14 +7,16 @@ branches:
   only:
     - master
     - develop
-    # Feature branches are built and tested too, so that the edge cross-origin
-    # guard in scripts/test.sh protects every `ntrada*.yml` edit rather than only
-    # those that reach master or develop. No image is produced for them —
-    # scripts/dockerize.sh exits early when the branch has no tag.
-    - /^feature\/.*$/
 before_script:
   - chmod -R a+x scripts
 script:
+  # The cross-origin guards run FIRST and as their own step. They need only
+  # `bash` and `awk`, so gating them here rather than inside ./scripts/test.sh
+  # keeps the FR-11 regression check independent of the dotnet 3.1 toolchain
+  # pinned above — a framework bump can break the build without silently
+  # taking the guard offline with it.
+  - ./scripts/tests/cors-guard.test.sh
+  - ./scripts/verify-cors-config.sh
   - ./scripts/build.sh
   - ./scripts/test.sh
 after_success:
