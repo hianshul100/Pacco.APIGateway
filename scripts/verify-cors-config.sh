@@ -59,17 +59,33 @@ failures=0
 # the allowed origin cannot silently stop matching, so a collision is not a
 # fallback — it is a dev server that refuses to start.
 #
-# The list is transcribed from hianshul100_Pacco/compose/infrastructure.yml and
-# compose/services.yml, which are the two files the README's runbook starts. It
-# is a literal here for the same reason the CORS values in check 5 are literals:
+# The list is transcribed from every compose/*.yml in the Pacco repository —
+# infrastructure.yml and services.yml are the two the README's runbook starts,
+# and the split variants (consul-fabio-vault.yml, grafana-seq-jaeger-prometheus.yml,
+# mongo-rabbit-redis.yml, services-local.yml) publish the same host ports. It is
+# a literal here for the same reason the CORS values in check 5 are literals:
 # this repository does not have the Pacco checkout to read, and a deliberate
 # change to the Compose port map is expected to update this list in the same
 # change.
 #
-# 3000 grafana · 5341 seq · 5672/15672/15692 rabbitmq · 6379 redis ·
-# 8200 vault · 8500 consul · 9090 prometheus · 9411/14268/16686 jaeger ·
-# 9998/9999 fabio · 27017 mongo
-COMPOSE_HOST_PORTS=(3000 5341 5672 6379 8200 8500 9090 9411 9998 9999 14268 15672 15692 16686 27017)
+# ⚠️ A transcribed list drifts. The first revision of this guard omitted 5015
+# (ordermaker-service, compose/services.yml:83) and 5778 (jaeger,
+# compose/infrastructure.yml:46), so an origin on either would have passed check
+# 4b while colliding with a running container — the exact failure this check
+# exists to prevent. Pacco.Web's tests/compose/devServerPort.test.ts holds this
+# array against the real compose files, since that checkout can see both
+# repositories at once; it fails whenever a published port is missing here.
+#
+# 3000 grafana · 5341 seq · 5672/15672/15692 rabbitmq · 5775/5778/6831/6832/9411/14268/16686
+# jaeger · 6379 redis · 8200 vault · 8500 consul · 9090 prometheus ·
+# 9998/9999 fabio · 27017 mongo · 5015 ordermaker-service (outside the 5000-5009
+# block checked below, so it must be named here)
+#
+# UDP-only publications (5775, 6831, 6832) are included deliberately: they cannot
+# literally collide with the dev server's TCP bind, but "the backend publishes
+# it, so the client does not take it" is only checkable as a rule without
+# protocol caveats.
+COMPOSE_HOST_PORTS=(3000 5015 5341 5672 5775 5778 6379 6831 6832 8200 8500 9090 9411 9998 9999 14268 15672 15692 16686 27017)
 
 # The platform's own service block. ADR-021 §6.3 item 1 keeps Pacco.Web out of
 # it; the gateway itself is 5000 (compose/services.yml:11).

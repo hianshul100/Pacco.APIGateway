@@ -34,10 +34,20 @@ dev server that refuses to start whenever the backend is up.
 and is outside the platform's `5000`–`5009` service block, which `ADR-021` §6.3
 item 1 keeps `Pacco.Web` out of. `verify-cors-config.sh` check 4b asserts both
 properties so the collision cannot come back, and carries the reserved-port list
-as literals transcribed from `compose/infrastructure.yml` and
-`compose/services.yml`: this repository has no Pacco checkout to read, and a
-deliberate change to that port map is expected to update the list in the same
-change.
+as literals transcribed from every `compose/*.yml` in the Pacco repository: this
+repository has no Pacco checkout to read, and a deliberate change to that port
+map is expected to update the list in the same change.
+
+A transcribed list drifts, and this one already had. Its first revision omitted
+`5015` (ordermaker-service, `compose/services.yml:83`) and `5778` (jaeger,
+`compose/infrastructure.yml:46`), both published host ports outside the
+`5000`–`5009` block — so an origin on either would have passed check 4b while
+colliding with a running container, which is the one thing the check exists to
+prevent. `COMPOSE_HOST_PORTS` now names all twenty published host ports, and
+`Pacco.Web/tests/compose/devServerPort.test.ts` parses the real Compose files and
+fails whenever one of them is missing from this array. That test is where the
+drift is caught, because the client checkout is the only place this script and
+`compose/*.yml` are visible at once.
 
 ## The two obligations, and what discharges each
 
