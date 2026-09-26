@@ -29,7 +29,7 @@ Modes:
 import sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
-ALLOWED_ORIGIN = "http://localhost:3000"
+ALLOWED_ORIGIN = "http://localhost:5173"
 
 
 class Handler(BaseHTTPRequestHandler):

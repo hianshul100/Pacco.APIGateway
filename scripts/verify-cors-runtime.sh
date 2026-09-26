@@ -45,7 +45,7 @@
 # Usage:
 #   ./scripts/verify-cors-runtime.sh [gateway-base-url] [allowed-origin] [disallowed-origin]
 #
-# Defaults: http://localhost:5000  http://localhost:3000  http://localhost:3999
+# Defaults: http://localhost:5000  http://localhost:5173  http://localhost:3999
 #
 # Exit codes: 0 = pass, 1 = fail, 2 = NOT RUN (gateway unreachable or curl absent).
 
@@ -56,7 +56,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib/cors-headers.sh"
 
 GATEWAY="${1:-${PACCO_GATEWAY_URL:-http://localhost:5000}}"
-ALLOWED_ORIGIN="${2:-${PACCO_WEB_ORIGIN:-http://localhost:3000}}"
+ALLOWED_ORIGIN="${2:-${PACCO_WEB_ORIGIN:-http://localhost:5173}}"
 DISALLOWED_ORIGIN="${3:-${PACCO_DISALLOWED_ORIGIN:-http://localhost:3999}}"
 SIGN_IN_PATH="/identity/sign-in"
 

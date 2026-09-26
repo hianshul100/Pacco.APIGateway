@@ -10,11 +10,34 @@ misinforms every later reader.
 ## The change
 
 Four one-line edits: `extensions.cors.allowedOrigins` goes from `- '*'` to
-`- 'http://localhost:3000'` in `ntrada.yml`, `ntrada.docker.yml`,
+`- 'http://localhost:5173'` in `ntrada.yml`, `ntrada.docker.yml`,
 `ntrada-async.yml` and `ntrada-async.docker.yml`, keeping `allowCredentials:
 true`. A wildcard origin and credentialled requests are mutually exclusive in
 the Fetch Standard, so the wildcard had to go for the browser client to work at
-all. `http://localhost:3000` is the local `Pacco.Web` development origin.
+all. `http://localhost:5173` is the local `Pacco.Web` development origin.
+
+### Why port `5173` and not `3000`
+
+`ADR-021` §5 rule 4 names `http://localhost:3000` as an *example*, "matching
+whichever port `Pacco.Web` actually serves", and `ADR-021` blocker `B1` records
+that the port "is the example in the intent, not a committed value". Choosing it
+is the implementer's call, and `3000` is the wrong choice: `Pacco.Web` is
+required to run "as a local process beside the Compose backend" (`ADR-021` §4),
+and `hianshul100_Pacco/compose/infrastructure.yml:34` already publishes host port
+`3000` for Grafana — the same file the Pacco README's runbook starts with
+`docker-compose -f infrastructure.yml up -d`. Because the client's dev server is
+pinned with `strictPort: true` — deliberately, so the allowed origin cannot
+silently stop matching — a collision is not a fallback to another port; it is a
+dev server that refuses to start whenever the backend is up.
+
+`5173` is Vite's own default, is published by no Compose file in that repository
+and is outside the platform's `5000`–`5009` service block, which `ADR-021` §6.3
+item 1 keeps `Pacco.Web` out of. `verify-cors-config.sh` check 4b asserts both
+properties so the collision cannot come back, and carries the reserved-port list
+as literals transcribed from `compose/infrastructure.yml` and
+`compose/services.yml`: this repository has no Pacco checkout to read, and a
+deliberate change to that port map is expected to update the list in the same
+change.
 
 ## The two obligations, and what discharges each
 
@@ -48,10 +71,11 @@ never as passed (`LOW_LEVEL_SPEC-13652-wave-1.md` §L.6.2).
 
 Asserts that the `extensions.cors` block is byte-identical across the four
 files, that `allowedOrigins` holds exactly one entry, that the entry is a
-concrete `scheme://host:port` origin, that no `'*'` survives, that
+concrete `scheme://host:port` origin, that no `'*'` survives on **any** entry,
+that the origin's port is bindable beside the running Compose backend, that
 `allowCredentials`, `allowedMethods`, `allowedHeaders` and `exposedHeaders`
-still hold their expected values, and that no logout or revoke route has
-appeared. Exit 0 = pass, 1 = fail.
+still hold their expected values, that no logout or revoke route has appeared,
+and that no route serves or proxies `Pacco.Web`. Exit 0 = pass, 1 = fail.
 
 The expected values in check 5 are literals, not a diff against the base ref: a
 deliberate future change to any of those keys is expected to update the literal
@@ -139,3 +163,11 @@ for explicit approval as a separate change rather than carried here.
   environments exist yet; their origins, gateway URLs, DNS names and deployment
   targets are to be defined later, and inventing them now would be fabrication.
   The single allowlisted origin is the local Pacco.Web development origin.
+- **The gateway does not serve Pacco.Web.** The client is a standalone browser
+  process: it is not bundled into any backend service image, it is not served by
+  Ntrada, and it has no Compose entry and no route here. It runs on its own local
+  origin beside the Compose backend and reaches the platform only through this
+  gateway at `http://localhost:5000` (`ADR-021` §5 rules 1, 2 and 3).
+  `verify-cors-config.sh` asserts no route serves or proxies it — if one did,
+  there would be only one origin and this whole cross-origin contract would be
+  inert.
