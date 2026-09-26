@@ -7,6 +7,11 @@ branches:
   only:
     - master
     - develop
+    # Feature branches are built and tested too, so that the edge cross-origin
+    # guard in scripts/test.sh protects every `ntrada*.yml` edit rather than only
+    # those that reach master or develop. No image is produced for them —
+    # scripts/dockerize.sh exits early when the branch has no tag.
+    - /^feature\/.*$/
 before_script:
   - chmod -R a+x scripts
 script:
@@ -18,6 +23,3 @@ notifications:
   email:
     on_success: never
     on_failure: always
-
-
-
