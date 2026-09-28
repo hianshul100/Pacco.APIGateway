@@ -27,7 +27,7 @@ extensions:
   cors:
     allowCredentials: true
     allowedOrigins:
-      - 'http://localhost:3000'
+      - 'http://localhost:5173'
     allowedMethods:
       - post
       - put

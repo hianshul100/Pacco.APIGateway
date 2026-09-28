@@ -103,19 +103,19 @@ echo "1. scripts/lib/cors-headers.sh — header parsing"
 
 # The capitalisation a real server emits. This is the case the IGNORECASE
 # implementation got wrong, and the reason the suite exists.
-CANONICAL=$'HTTP/1.1 204 No Content\r\nAccess-Control-Allow-Origin: http://localhost:3000\r\nAccess-Control-Allow-Credentials: true\r\n\r\n'
+CANONICAL=$'HTTP/1.1 204 No Content\r\nAccess-Control-Allow-Origin: http://localhost:5173\r\nAccess-Control-Allow-Credentials: true\r\n\r\n'
 assert_equals "canonical capitalisation is matched" \
-  "http://localhost:3000" "$(header_value Access-Control-Allow-Origin "$CANONICAL")"
+  "http://localhost:5173" "$(header_value Access-Control-Allow-Origin "$CANONICAL")"
 assert_equals "Access-Control-Allow-Credentials is read from the same response" \
   "true" "$(header_value Access-Control-Allow-Credentials "$CANONICAL")"
 
-LOWER=$'HTTP/2 204\r\naccess-control-allow-origin: http://localhost:3000\r\n\r\n'
+LOWER=$'HTTP/2 204\r\naccess-control-allow-origin: http://localhost:5173\r\n\r\n'
 assert_equals "all-lower-case spelling is matched (HTTP/2 style)" \
-  "http://localhost:3000" "$(header_value Access-Control-Allow-Origin "$LOWER")"
+  "http://localhost:5173" "$(header_value Access-Control-Allow-Origin "$LOWER")"
 
-UPPER=$'HTTP/1.1 200 OK\r\nACCESS-CONTROL-ALLOW-ORIGIN: http://localhost:3000\r\n\r\n'
+UPPER=$'HTTP/1.1 200 OK\r\nACCESS-CONTROL-ALLOW-ORIGIN: http://localhost:5173\r\n\r\n'
 assert_equals "all-upper-case spelling is matched" \
-  "http://localhost:3000" "$(header_value Access-Control-Allow-Origin "$UPPER")"
+  "http://localhost:5173" "$(header_value Access-Control-Allow-Origin "$UPPER")"
 
 ABSENT=$'HTTP/1.1 204 No Content\r\nVary: Origin\r\nContent-Length: 0\r\n\r\n'
 assert_equals "an absent header yields the empty string" \
@@ -127,13 +127,13 @@ WILDCARD=$'HTTP/1.1 204 No Content\r\nAccess-Control-Allow-Origin: *\r\n\r\n'
 assert_equals "a wildcard value is returned verbatim, not swallowed" \
   "*" "$(header_value Access-Control-Allow-Origin "$WILDCARD")"
 
-PADDED=$'HTTP/1.1 204 No Content\r\nAccess-Control-Allow-Origin: \t http://localhost:3000  \r\n\r\n'
+PADDED=$'HTTP/1.1 204 No Content\r\nAccess-Control-Allow-Origin: \t http://localhost:5173  \r\n\r\n'
 assert_equals "surrounding whitespace is trimmed from the value" \
-  "http://localhost:3000" "$(header_value Access-Control-Allow-Origin "$PADDED")"
+  "http://localhost:5173" "$(header_value Access-Control-Allow-Origin "$PADDED")"
 
-BURIED=$'HTTP/1.1 400 Bad Request\r\nDate: Mon, 01 Jan 2035 00:00:00 GMT\r\nServer: Kestrel\r\nVary: Origin\r\nAccess-Control-Allow-Origin: http://localhost:3000\r\nContent-Type: application/json\r\n\r\n{"code":"error"}'
+BURIED=$'HTTP/1.1 400 Bad Request\r\nDate: Mon, 01 Jan 2035 00:00:00 GMT\r\nServer: Kestrel\r\nVary: Origin\r\nAccess-Control-Allow-Origin: http://localhost:5173\r\nContent-Type: application/json\r\n\r\n{"code":"error"}'
 assert_equals "a header below other headers is still found" \
-  "http://localhost:3000" "$(header_value Access-Control-Allow-Origin "$BURIED")"
+  "http://localhost:5173" "$(header_value Access-Control-Allow-Origin "$BURIED")"
 
 PREFIXED=$'HTTP/1.1 204 No Content\r\nAccess-Control-Allow-Origin-Patterns: http://evil.example\r\n\r\n'
 assert_equals "a longer header name that merely starts the same does not match" \
@@ -145,9 +145,9 @@ assert_equals "a body line spelling the header name is not read as a header" \
 
 # curl -i prints the 100 Continue preamble ahead of the real response; the value
 # that matters is the one on the final section.
-CONTINUE=$'HTTP/1.1 100 Continue\r\n\r\nHTTP/1.1 400 Bad Request\r\nAccess-Control-Allow-Origin: http://localhost:3000\r\n\r\n{}'
+CONTINUE=$'HTTP/1.1 100 Continue\r\n\r\nHTTP/1.1 400 Bad Request\r\nAccess-Control-Allow-Origin: http://localhost:5173\r\n\r\n{}'
 assert_equals "the final header section wins over a 100 Continue preamble" \
-  "http://localhost:3000" "$(header_value Access-Control-Allow-Origin "$CONTINUE")"
+  "http://localhost:5173" "$(header_value Access-Control-Allow-Origin "$CONTINUE")"
 
 echo
 
@@ -182,12 +182,12 @@ run_guard_on_mutation() { # <case-name> [file] [sed-expression]
 run_guard_on_mutation pristine
 assert_status "the guard passes on the configuration as committed" 0 "$BASHCOV_STATUS"
 assert_contains "the passing run names the allowed origin" \
-  "RESULT: PASS — allowed origin is 'http://localhost:3000'" "$BASHCOV_STDOUT"
+  "RESULT: PASS — allowed origin is 'http://localhost:5173'" "$BASHCOV_STDOUT"
 assert_contains "the passing run states it is the static half only" \
   "STATIC half of FR-11 (AC-15) only" "$BASHCOV_STDOUT"
 
 # The regression the change exists to prevent.
-run_guard_on_mutation wildcard ntrada.yml "s|- 'http://localhost:3000'|- '*'|"
+run_guard_on_mutation wildcard ntrada.yml "s|- 'http://localhost:5173'|- '*'|"
 assert_status "a restored wildcard fails the guard" 1 "$BASHCOV_STATUS"
 assert_contains "a restored wildcard is named as a wildcard" \
   "still allows the '*' wildcard origin" "$BASHCOV_STDOUT"
@@ -196,21 +196,58 @@ assert_contains "a restored wildcard also breaks four-file identity" \
 
 # BR-8: an allow-list of several origins is not the contract either.
 run_guard_on_mutation second-origin ntrada.yml \
-  "s|- 'http://localhost:3000'|- 'http://localhost:3000'\n      - 'http://localhost:4000'|"
+  "s|- 'http://localhost:5173'|- 'http://localhost:5173'\n      - 'http://localhost:4000'|"
 assert_status "a second allowed origin fails the guard" 1 "$BASHCOV_STATUS"
 assert_contains "a second allowed origin is counted" \
   "allows 2 origin(s); exactly 1 is required" "$BASHCOV_STDOUT"
 
+# A wildcard smuggled in as the SECOND entry. The count check catches the list
+# length, but the wildcard check has to scan every entry or the run reports
+# "retains no wildcard origin" over a configuration that plainly has one.
+run_guard_on_mutation trailing-wildcard ntrada.yml \
+  "s|- 'http://localhost:5173'|- 'http://localhost:5173'\n      - '*'|"
+assert_status "a wildcard as the second entry fails the guard" 1 "$BASHCOV_STATUS"
+assert_contains "a wildcard as the second entry is named as a wildcard" \
+  "still allows the '*' wildcard origin" "$BASHCOV_STDOUT"
+
+# ADR-021 §4: Pacco.Web runs as a local process BESIDE the Compose backend, on a
+# port the backend does not already publish. Grafana is on host 3000 in
+# hianshul100_Pacco/compose/infrastructure.yml, so an origin there is a dev
+# server that cannot start — the reason this guard exists rather than a
+# stylistic preference about port numbers.
+run_guard_on_mutation compose-port-collision ntrada.yml \
+  "s|- 'http://localhost:5173'|- 'http://localhost:3000'|"
+assert_status "an origin on a Compose-published host port fails the guard" 1 "$BASHCOV_STATUS"
+assert_contains "the colliding port is named with its consequence" \
+  "the Pacco Compose backend already publishes on the host" "$BASHCOV_STDOUT"
+
+# ADR-021 §6.3 item 1: Pacco.Web has no allocation in the 5000-5009 block, and
+# 5000 is the gateway itself.
+run_guard_on_mutation platform-port-block ntrada.yml \
+  "s|- 'http://localhost:5173'|- 'http://localhost:5003'|"
+assert_status "an origin inside the 5000-5009 service block fails the guard" 1 "$BASHCOV_STATUS"
+assert_contains "the service block is named" \
+  "inside the platform's 5000-5009 service block" "$BASHCOV_STDOUT"
+
+# ADR-021 §5 rules 1 and 2: the gateway never serves the client. A route that
+# did would make the cross-origin contract inert, since there would no longer be
+# two origins.
+run_guard_on_mutation gateway-serves-web ntrada.yml \
+  "s|^  home:$|  web:\n    routes:\n      - upstream: /app\n        method: GET\n        use: downstream\n        downstream: pacco-web/index.html\n\n  home:|"
+assert_status "a route serving Pacco.Web fails the guard" 1 "$BASHCOV_STATUS"
+assert_contains "the gateway-served client is named" \
+  "serves or proxies Pacco.Web from the gateway" "$BASHCOV_STDOUT"
+
 # A same-value edit in only one file: the four-file identity check is the only
 # thing that catches this, so it is asserted on its own.
 run_guard_on_mutation drift ntrada-async.docker.yml \
-  "s|- 'http://localhost:3000'|- 'http://127.0.0.1:3000'|"
+  "s|- 'http://localhost:5173'|- 'http://127.0.0.1:5173'|"
 assert_status "one file drifting from the other three fails the guard" 1 "$BASHCOV_STATUS"
 assert_contains "the drifting file is named" \
   "ntrada-async.docker.yml cors block differs from ntrada.yml" "$BASHCOV_STDOUT"
 
 # An origin without a port is not an exact origin for a dev server.
-run_guard_on_mutation no-port ntrada.yml "s|- 'http://localhost:3000'|- 'http://localhost'|"
+run_guard_on_mutation no-port ntrada.yml "s|- 'http://localhost:5173'|- 'http://localhost'|"
 assert_status "an origin without a port fails the guard" 1 "$BASHCOV_STATUS"
 assert_contains "the incomplete origin is reported" \
   "is not a concrete scheme://host:port origin" "$BASHCOV_STDOUT"
@@ -259,7 +296,7 @@ echo
 echo "3. scripts/verify-cors-runtime.sh — against a local mock edge"
 echo "   (proves the instrument; AC-16 remains a statement about the REAL gateway)"
 
-ALLOWED="http://localhost:3000"
+ALLOWED="http://localhost:5173"
 DISALLOWED="http://localhost:3999"
 
 start_mock_edge() { # <mode> -> echoes the base URL, or empty on failure

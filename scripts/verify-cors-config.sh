@@ -8,7 +8,10 @@
 #   1. the `extensions.cors` block is byte-identical in all four files;
 #   2. `allowedOrigins` holds EXACTLY ONE entry;
 #   3. that entry is a concrete origin carrying scheme, host and port;
-#   4. no `'*'` wildcard survives in `allowedOrigins`;
+#   4. no `'*'` wildcard survives on ANY `allowedOrigins` entry;
+#   4b. the origin's port is one Pacco.Web can actually bind on a developer
+#      machine while the Compose backend is up — it is not a host port the
+#      backend publishes, and it is not inside the platform's 5000-5009 block;
 #   5. `allowCredentials`, `allowedMethods`, `allowedHeaders` and
 #      `exposedHeaders` still hold their EXPECTED values — the values they
 #      carry on the base ref of this change, restated here as literals. The
@@ -17,7 +20,9 @@
 #      commit; the failure message names the expected value for that reason;
 #   6. no logout, sign-out or revoke route is introduced, since logout is a
 #      client-side session discard only and the edge's JWT validation and
-#      revocation behaviour are untouched.
+#      revocation behaviour are untouched;
+#   6b. no route serves or proxies Pacco.Web — the client is a standalone
+#      browser process, never served by Ntrada (ADR-021 §5 rules 1 and 2).
 #
 # The guard lives HERE, in the repository that owns the files, so that an edit
 # to any `ntrada*.yml` is protected without relying on a sibling checkout being
@@ -43,6 +48,49 @@ CONFIG_DIR="${PACCO_NTRADA_DIR:-$ROOT/src/Pacco.APIGateway}"
 FILES=(ntrada.yml ntrada.docker.yml ntrada-async.yml ntrada-async.docker.yml)
 
 failures=0
+
+# Host ports the Pacco Docker Compose backend publishes, and which Pacco.Web
+# therefore cannot bind while the backend is running.
+#
+# Per ADR-021 §4, Pacco.Web "runs as a local process beside the Compose backend"
+# and has "no port allocation in the platform's 5000-5009 block". A port that
+# collides with the backend defeats the first half of that: the client's dev
+# server is pinned (`strictPort: true` in Pacco.Web/vite.config.ts) precisely so
+# the allowed origin cannot silently stop matching, so a collision is not a
+# fallback — it is a dev server that refuses to start.
+#
+# The list is transcribed from every compose/*.yml in the Pacco repository —
+# infrastructure.yml and services.yml are the two the README's runbook starts,
+# and the split variants (consul-fabio-vault.yml, grafana-seq-jaeger-prometheus.yml,
+# mongo-rabbit-redis.yml, services-local.yml) publish the same host ports. It is
+# a literal here for the same reason the CORS values in check 5 are literals:
+# this repository does not have the Pacco checkout to read, and a deliberate
+# change to the Compose port map is expected to update this list in the same
+# change.
+#
+# ⚠️ A transcribed list drifts. The first revision of this guard omitted 5015
+# (ordermaker-service, compose/services.yml:83) and 5778 (jaeger,
+# compose/infrastructure.yml:46), so an origin on either would have passed check
+# 4b while colliding with a running container — the exact failure this check
+# exists to prevent. Pacco.Web's tests/compose/devServerPort.test.ts holds this
+# array against the real compose files, since that checkout can see both
+# repositories at once; it fails whenever a published port is missing here.
+#
+# 3000 grafana · 5341 seq · 5672/15672/15692 rabbitmq · 5775/5778/6831/6832/9411/14268/16686
+# jaeger · 6379 redis · 8200 vault · 8500 consul · 9090 prometheus ·
+# 9998/9999 fabio · 27017 mongo · 5015 ordermaker-service (outside the 5000-5009
+# block checked below, so it must be named here)
+#
+# UDP-only publications (5775, 6831, 6832) are included deliberately: they cannot
+# literally collide with the dev server's TCP bind, but "the backend publishes
+# it, so the client does not take it" is only checkable as a rule without
+# protocol caveats.
+COMPOSE_HOST_PORTS=(3000 5015 5341 5672 5775 5778 6379 6831 6832 8200 8500 9090 9411 9998 9999 14268 15672 15692 16686 27017)
+
+# The platform's own service block. ADR-021 §6.3 item 1 keeps Pacco.Web out of
+# it; the gateway itself is 5000 (compose/services.yml:11).
+PLATFORM_PORT_BLOCK_START=5000
+PLATFORM_PORT_BLOCK_END=5009
 
 pass() { printf '  PASS  %s\n' "$1"; }
 fail() { printf '  FAIL  %s\n' "$1"; failures=$((failures + 1)); }
@@ -121,11 +169,34 @@ for name in "${FILES[@]}"; do
     fail "$name origin '$origin' is not a concrete scheme://host:port origin"
   fi
 
-  # 4. No wildcard survives.
-  if [[ "$origin" == "*" ]]; then
+  # 4. No wildcard survives — on ANY entry, not only the first. Check 2 counts
+  #    the entries but a two-entry list whose SECOND entry is '*' would
+  #    otherwise be reported as wildcard-free, which is the one thing this guard
+  #    exists to make impossible to say.
+  wildcard_found=0
+  for candidate in "${origins[@]:-}"; do
+    [[ "$candidate" == "*" ]] && wildcard_found=1
+  done
+  if (( wildcard_found == 1 )); then
     fail "$name still allows the '*' wildcard origin"
   else
     pass "$name retains no wildcard origin"
+  fi
+
+  # 4b. The origin must be bindable beside the running Compose backend.
+  origin_port="${origin##*:}"
+  if [[ "$origin_port" =~ ^[0-9]+$ ]]; then
+    collides=0
+    for reserved in "${COMPOSE_HOST_PORTS[@]}"; do
+      [[ "$origin_port" == "$reserved" ]] && collides=1
+    done
+    if (( collides == 1 )); then
+      fail "$name origin '$origin' uses port $origin_port, which the Pacco Compose backend already publishes on the host — Pacco.Web cannot bind it while the backend is up"
+    elif (( origin_port >= PLATFORM_PORT_BLOCK_START && origin_port <= PLATFORM_PORT_BLOCK_END )); then
+      fail "$name origin '$origin' uses port $origin_port, inside the platform's ${PLATFORM_PORT_BLOCK_START}-${PLATFORM_PORT_BLOCK_END} service block, which Pacco.Web has no allocation in (ADR-021 §4)"
+    else
+      pass "$name origin port $origin_port is free of the Compose backend and of the ${PLATFORM_PORT_BLOCK_START}-${PLATFORM_PORT_BLOCK_END} block"
+    fi
   fi
 
   # 5. Sibling CORS keys still hold their expected values. These are literals,
@@ -165,6 +236,17 @@ for name in "${FILES[@]}"; do
     fail "$name introduces a logout or revoke route"
   else
     pass "$name adds no logout or revoke route"
+  fi
+
+  # 6b. The gateway must not serve Pacco.Web. Per ADR-021 §5 rules 1 and 2 the
+  #     client is a standalone browser process: it is never bundled into a
+  #     backend service image and is never served by Ntrada, which is why the
+  #     edge names it as a cross-ORIGIN caller in the first place. A route that
+  #     proxied or served the client would make the whole CORS change inert.
+  if grep -Eiq '(downstream|module|use):[[:space:]]*.*(pacco[-.]?web|web-?client|spa|static[-_]?files?)' "$CONFIG_DIR/$name"; then
+    fail "$name serves or proxies Pacco.Web from the gateway; the client is a standalone browser process (ADR-021 §5 rules 1 and 2)"
+  else
+    pass "$name serves no Pacco.Web content from the gateway"
   fi
 
   if [[ "$content" == *$'jwt:\n    issuerSigningKey'* ]]; then
